@@ -2,75 +2,188 @@
 <html lang="pt-PT">
 <head>
     <meta charset="UTF-8">
-    <title>Corretor Automático de Português (PT-PT)</title>
+    <title>Corretor Avançado de Português (PT-PT)</title>
     <style>
+        :root {
+            --spelling: #dc3545;
+            --grammar: #ffc107;
+            --typography: #17a2b8;
+            --default: #6c757d;
+        }
         body {
             font-family: Arial, sans-serif;
             max-width: 800px;
             margin: 20px auto;
             padding: 20px;
+            background-color: #f8f9fa;
         }
         #texto {
             width: 100%;
-            height: 150px;
-            margin-bottom: 10px;
-        }
-        #resultados {
-            padding: 15px;
-            background-color: #f8f9fa;
+            height: 200px;
+            margin: 10px 0;
+            padding: 10px;
+            border: 2px solid #ddd;
             border-radius: 5px;
         }
-        .erro {
-            color: #dc3545;
+        #preview {
+            border: 2px solid #eee;
+            padding: 10px;
             margin: 10px 0;
+            border-radius: 5px;
+            background-color: white;
         }
-        .sugestao {
-            color: #28a745;
-            margin-left: 10px;
+        .erro-destaque {
+            background-color: var(--default);
+            color: white;
+            padding: 2px 4px;
+            border-radius: 3px;
+            cursor: pointer;
         }
+        .erro-destaque.spelling { background-color: var(--spelling); }
+        .erro-destaque.grammar { background-color: var(--grammar); }
+        .erro-destaque.typography { background-color: var(--typography); }
+        #stats {
+            margin: 10px 0;
+            color: #666;
+            font-size: 0.9em;
+        }
+        #resultados { margin-top: 20px; }
+        .erro {
+            background-color: white;
+            padding: 10px;
+            margin: 10px 0;
+            border-left: 4px solid var(--default);
+            border-radius: 3px;
+        }
+        #spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #007bff;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: none;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover { background-color: #0056b3; }
     </style>
 </head>
 <body>
-    <h1>Corretor de Português (PT-PT)</h1>
-    <textarea id="texto" placeholder="Escreva seu texto aqui..."></textarea>
-    <button onclick="verificarTexto()">Verificar Erros</button>
+    <h1>🔍 Corretor de Português (PT-PT) 🛠️</h1>
+    <textarea id="texto" placeholder="Escreva aqui..."></textarea>
+    <div id="preview"></div>
+    <button onclick="verificarTexto()">
+        <span id="textoBotao">Verificar</span>
+        <div id="spinner"></div>
+    </button>
+    <div id="stats"></div>
     <div id="resultados"></div>
 
     <script>
-        async function verificarTexto() {
-            const texto = document.getElementById('texto').value;
-            const resposta = await fetch('https://api.languagetool.org/v2/check', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: `text=${encodeURIComponent(texto)}&language=pt-PT&enabledOnly=false`,
-            });
+        let timeoutId;
+        let podeVerificar = true;
 
-            const dados = await resposta.json();
-            exibirResultados(dados);
+        // Carregar texto salvo
+        document.getElementById('texto').value = localStorage.getItem('textoSalvo') || '';
+
+        // Verificação em tempo real com debounce
+        document.getElementById('texto').addEventListener('input', (e) => {
+            localStorage.setItem('textoSalvo', e.target.value);
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => verificarTexto(e.target.value), 1000);
+        });
+
+        async function verificarTexto() {
+            if (!podeVerificar) return;
+            podeVerificar = false;
+            const texto = document.getElementById('texto').value;
+
+            // Mostrar spinner
+            document.getElementById('spinner').style.display = 'inline-block';
+            document.getElementById('textoBotao').style.display = 'none';
+
+            try {
+                const resposta = await fetch('https://api.languagetool.org/v2/check', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `text=${encodeURIComponent(texto)}&language=pt-PT&enabledOnly=false`,
+                });
+                const dados = await resposta.json();
+
+                exibirEstatisticas(texto, dados.matches, dados.time);
+                destacarErros(texto, dados.matches);
+                exibirResultados(dados.matches);
+            } catch (erro) {
+                console.error('Erro na API:', erro);
+            } finally {
+                document.getElementById('spinner').style.display = 'none';
+                document.getElementById('textoBotao').style.display = 'inline';
+                setTimeout(() => { podeVerificar = true }, 2000);
+            }
         }
 
-        function exibirResultados(dados) {
-            const divResultados = document.getElementById('resultados');
-            divResultados.innerHTML = '';
-
-            if (dados.matches.length === 0) {
-                divResultados.innerHTML = '<p>Nenhum erro encontrado! 🎉</p>';
-                return;
-            }
-
-            dados.matches.forEach(erro => {
-                const divErro = document.createElement('div');
-                divErro.className = 'erro';
-                divErro.innerHTML = `
-                    <strong>Erro:</strong> ${erro.message}<br>
-                    <strong>Contexto:</strong> "${erro.context.text}"<br>
-                    <strong>Sugestões:</strong>
-                        <span class="sugestao">${erro.replacements.map(r => r.value).join(', ')}</span>
-                `;
-                divResultados.appendChild(divErro);
+        function destacarErros(textoOriginal, erros) {
+            let textoDestacado = textoOriginal;
+            erros.reverse().forEach(erro => {
+                const inicio = erro.offset;
+                const fim = inicio + erro.length;
+                const categoria = erro.rule.category.id.toLowerCase();
+                textoDestacado = 
+                    textoDestacado.slice(0, inicio) + 
+                    `<mark class="erro-destaque ${categoria}">${textoDestacado.slice(inicio, fim)}</mark>` + 
+                    textoDestacado.slice(fim);
             });
+            document.getElementById('preview').innerHTML = textoDestacado;
+        }
+
+        function exibirEstatisticas(texto, erros, tempo) {
+            const palavras = texto.trim().split(/\s+/).filter(w => w).length;
+            document.getElementById('stats').innerHTML = `
+                📊 ${palavras} palavras | 🚨 ${erros.length} erros | ⏱️ ${tempo}ms
+            `;
+        }
+
+        function exibirResultados(erros) {
+            const divResultados = document.getElementById('resultados');
+            divResultados.innerHTML = erros.length === 0 ? 
+                '<div class="erro">✅ Perfeito! Nenhum erro encontrado.</div>' : 
+                '';
+
+            erros.forEach(erro => {
+                const div = document.createElement('div');
+                div.className = 'erro';
+                div.style.borderLeftColor = getCategoriaCor(erro.rule.category.id);
+                div.innerHTML = `
+                    <strong>${erro.message}</strong>
+                    <p>🔍 Contexto: "${erro.context.text}"</p>
+                    ${erro.replacements.length ? 
+                        `<p>💡 Sugestões: ${erro.replacements.map(r => `<code>${r.value}</code>`).join(', ')}</p>` : ''}
+                    ${erro.rule.examples ? 
+                        `<p>📚 Exemplo: <em>${erro.rule.examples[0].text}</em></p>` : ''}
+                `;
+                divResultados.appendChild(div);
+            });
+        }
+
+        function getCategoriaCor(categoria) {
+            const categorias = {
+                spelling: 'var(--spelling)',
+                grammar: 'var(--grammar)',
+                typography: 'var(--typography)',
+                default: 'var(--default)'
+            };
+            return categorias[categoria.toLowerCase()] || categorias.default;
         }
     </script>
 </body>
