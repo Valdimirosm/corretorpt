@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="UTF-8">
+    <title>Corretor Automático de Português (PT-PT)</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+        #texto {
+            width: 100%;
+            height: 150px;
+            margin-bottom: 10px;
+        }
+        #resultados {
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+        .erro {
+            color: #dc3545;
+            margin: 10px 0;
+        }
+        .sugestao {
+            color: #28a745;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Corretor de Português (PT-PT)</h1>
+    <textarea id="texto" placeholder="Escreva seu texto aqui..."></textarea>
+    <button onclick="verificarTexto()">Verificar Erros</button>
+    <div id="resultados"></div>
+
+    <script>
+        async function verificarTexto() {
+            const texto = document.getElementById('texto').value;
+            const resposta = await fetch('https://api.languagetool.org/v2/check', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `text=${encodeURIComponent(texto)}&language=pt-PT&enabledOnly=false`,
+            });
+
+            const dados = await resposta.json();
+            exibirResultados(dados);
+        }
+
+        function exibirResultados(dados) {
+            const divResultados = document.getElementById('resultados');
+            divResultados.innerHTML = '';
+
+            if (dados.matches.length === 0) {
+                divResultados.innerHTML = '<p>Nenhum erro encontrado! 🎉</p>';
+                return;
+            }
+
+            dados.matches.forEach(erro => {
+                const divErro = document.createElement('div');
+                divErro.className = 'erro';
+                divErro.innerHTML = `
+                    <strong>Erro:</strong> ${erro.message}<br>
+                    <strong>Contexto:</strong> "${erro.context.text}"<br>
+                    <strong>Sugestões:</strong>
+                        <span class="sugestao">${erro.replacements.map(r => r.value).join(', ')}</span>
+                `;
+                divResultados.appendChild(divErro);
+            });
+        }
+    </script>
+</body>
+</html>
